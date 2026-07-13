@@ -586,13 +586,14 @@ function processData(rows) {
     const statusRaw = (row[cfg.colStatus - 1] || '').toString().trim();
     const suggested = toNum(row[cfg.colSuggested - 1]);
     const lastDate = (row[cfg.colLastDate - 1] || '').toString().trim();
+    const unit = (row[2] || '').toString().trim();
     // Map sheet status text to internal status key
     let status = 'ok';
     if (statusRaw === '緊急補貨') status = 'critical';
     else if (statusRaw === '低庫存') status = 'low';
     // Estimate daysLeft from stock/safety ratio for display
     const daysLeft = safetyStock > 0 ? (stock / safetyStock) * 2 : (stock > 0 ? 999 : 0);
-    items[name] = { name, stock, safetyStock, status, suggested, lastDate, daysLeft, weekOut: 0 };
+    items[name] = { name, stock, safetyStock, status, suggested, lastDate, daysLeft, weekOut: 0, unit };
   }
   renderAll();
 }
@@ -649,10 +650,11 @@ function renderAlerts() {
     const icon = it.status === 'critical' ? '🚨' : '⚠️';
     const stockStr = Math.round(it.stock);
     const safeStr = Math.round(it.safetyStock);
+    const u = it.unit || '件';
     const msg = it.status === 'critical'
-      ? `現貨 <strong>${stockStr}</strong> 件，已低於或等於零，請立即補貨！`
-      : `現貨 <strong>${stockStr}</strong> 件，低於安全庫存（${safeStr} 件）`;
-    const tag = it.suggested > 0 ? `建議叫 ${Math.round(it.suggested)} 件` : '';
+      ? `現貨 <strong>${stockStr}</strong> ${u}，已低於或等於零，請立即補貨！`
+      : `現貨 <strong>${stockStr}</strong> ${u}，低於安全庫存（${safeStr} ${u}）`;
+    const tag = it.suggested > 0 ? `建議叫 ${Math.round(it.suggested)} ${u}` : '';
     return `<div class="${cls} alert-bar">
       <span class="alert-icon">${icon}</span>
       <span class="alert-text"><strong>${it.name}</strong> — ${msg}</span>
@@ -682,13 +684,14 @@ function renderTable() {
       : it.status === 'low'
       ? '<span class="pill pill-amber">低庫存</span>'
       : '<span class="pill pill-green">正常</span>';
+    const uu = it.unit || '件';
     const sugTag = it.suggested > 0
-      ? `<span class="pill pill-blue">+${Math.round(it.suggested)}</span>`
+      ? `<span class="pill pill-blue">+${Math.round(it.suggested)} ${uu}</span>`
       : '<span style="color:var(--text3)">—</span>';
     const dateStr = it.lastDate ? it.lastDate.toString().slice(0, 10) : '—';
     return `<tr>
       <td style="font-weight:700">${it.name}</td>
-      <td style="font-family:var(--mono)">${Math.round(it.stock)}</td>
+      <td style="font-family:var(--mono)">${Math.round(it.stock)} ${it.unit||'件'}</td>
       <td><div class="prog-wrap"><div class="prog-bg"><div class="prog-fill" style="width:${pct}%;background:${barColor}"></div></div><span class="prog-num" style="color:${barColor}">${pct}%</span></div></td>
       <td style="font-family:var(--mono)">${Math.round(it.safetyStock)}</td>
       <td>${sugTag}</td>
