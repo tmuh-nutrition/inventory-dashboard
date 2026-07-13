@@ -431,28 +431,28 @@ tbody tr:hover td { background: var(--surface2); }
       <div class="cfg-grid">
         <div class="cfg-card">
           <label>品項名稱欄（預設 A=1）</label>
-          <input type="number" id="cfg-col-item" value="1" min="1">
+          <input type="number" id="cfg-col-item" value="2" min="1">
         </div>
         <div class="cfg-card">
           <label>現有庫存欄（預設 E=5）</label>
-          <input type="number" id="cfg-col-stock" value="5" min="1">
+          <input type="number" id="cfg-col-stock" value="4" min="1">
         </div>
         <div class="cfg-card">
           <label>安全庫存欄（預設 F=6）</label>
-          <input type="number" id="cfg-col-safety" value="6" min="1">
+          <input type="number" id="cfg-col-safety" value="5" min="1">
         </div>
         <div class="cfg-card">
           <label>庫存狀態欄（預設 G=7）</label>
-          <input type="number" id="cfg-col-status" value="7" min="1">
+          <input type="number" id="cfg-col-status" value="6" min="1">
           <div class="cfg-hint">值需為「正常」、「低庫存」或「緊急補貨」</div>
         </div>
         <div class="cfg-card">
           <label>建議叫貨欄（預設 H=8）</label>
-          <input type="number" id="cfg-col-suggested" value="8" min="1">
+          <input type="number" id="cfg-col-suggested" value="7" min="1">
         </div>
         <div class="cfg-card">
           <label>最後異動日欄（預設 I=9）</label>
-          <input type="number" id="cfg-col-lastdate" value="9" min="1">
+          <input type="number" id="cfg-col-lastdate" value="10" min="1">
         </div>
         <div class="cfg-card">
           <label>資料起始列（預設 3）</label>
@@ -492,8 +492,8 @@ let cfg = {
   sheetName: '庫存彙總',
   apiKey: 'AIzaSyDICAj2JAxEIWEtyvwQf9hncn3a17BBJHk',
   // 庫存彙總欄位：A=品項 B=單位 C=累計進貨 D=累計出貨 E=現有庫存 F=安全庫存 G=狀態 H=建議叫貨 I=最後異動日
-  colItem: 1, colUnit: 2, colStock: 5, colSafety: 6,
-  colStatus: 7, colSuggested: 8, colLastDate: 9,
+  colItem: 2, colUnit: 3, colStock: 4, colSafety: 5,
+  colStatus: 6, colSuggested: 7, colLastDate: 10,
   startRow: 3,  // 庫存彙總第1列是說明、第2列是標題、第3列起是資料
   warnDays: 4,
   finSheet: '月結收支報表'
