@@ -606,6 +606,7 @@ function renderAll() {
   renderFinance();
   renderWeeklyStocktake();
   renderOrderSuggestion();
+  checkDailyRecord();
 }
 
 function renderMetrics() {
@@ -1006,6 +1007,75 @@ function renderOrderSuggestion() {
     banner.style.background = 'var(--red-bg)';
     banner.style.borderColor = 'var(--red-border)';
     banner.style.color = 'var(--red)';
+  });
+}
+
+function checkDailyRecord() {
+  // Read 出貨記錄 sheet to check if today has any records
+  const sheetEnc = encodeURIComponent('出貨記錄');
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${sheetEnc}?key=${cfg.apiKey}`;
+  fetch(url).then(r => r.json()).then(data => {
+    const rows = (data.values || []).slice(2); // skip header rows
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}/${String(today.getMonth()+1).padStart(2,'0')}/${String(today.getDate()).padStart(2,'0')}`;
+    const todayAlt = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+    // Find latest record date
+    let latestDate = '';
+    let todayCount = 0;
+    rows.forEach(row => {
+      const d = (row[1] || '').toString().trim();
+      if (d) {
+        if (d > latestDate) latestDate = d;
+        if (d.includes(todayStr) || d.includes(todayAlt) ||
+            d === todayStr || d === todayAlt) {
+          todayCount++;
+        }
+      }
+    });
+
+    // Format latest date for display
+    const daysDiff = latestDate ? Math.floor((today - new Date(latestDate.replace(/\//g,'-'))) / 86400000) : 999;
+
+    // Update or create daily status banner
+    let banner = document.getElementById('daily-record-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'daily-record-banner';
+      banner.style.cssText = 'margin-bottom:1rem;padding:.65rem .9rem;border-radius:var(--radius);font-size:.83rem;border:1px solid;display:flex;align-items:center;gap:.6rem;';
+      // Insert after sync-row or at top of page
+      const syncRow = document.querySelector('.sync-row') || document.querySelector('.metric-grid');
+      if (syncRow) syncRow.parentNode.insertBefore(banner, syncRow.nextSibling);
+    }
+
+    if (todayCount > 0) {
+      banner.style.background = 'var(--green-bg)';
+      banner.style.borderColor = 'var(--green-border)';
+      banner.style.color = 'var(--green)';
+      banner.innerHTML = `✅ <strong>今日已填寫出貨記錄</strong>（共 ${todayCount} 筆）`;
+    } else if (daysDiff === 0) {
+      banner.style.background = 'var(--green-bg)';
+      banner.style.borderColor = 'var(--green-border)';
+      banner.style.color = 'var(--green)';
+      banner.innerHTML = `✅ <strong>今日已填寫出貨記錄</strong>`;
+    } else if (daysDiff === 1) {
+      banner.style.background = 'var(--amber-bg)';
+      banner.style.borderColor = 'var(--amber-border)';
+      banner.style.color = 'var(--amber)';
+      banner.innerHTML = `⚠ <strong>今日尚未填寫出貨記錄</strong>，最後一筆是昨天（${latestDate}）`;
+    } else if (daysDiff <= 3) {
+      banner.style.background = 'var(--amber-bg)';
+      banner.style.borderColor = 'var(--amber-border)';
+      banner.style.color = 'var(--amber)';
+      banner.innerHTML = `⚠ <strong>今日尚未填寫出貨記錄</strong>，最後一筆是 ${daysDiff} 天前（${latestDate}）`;
+    } else {
+      banner.style.background = 'var(--red-bg)';
+      banner.style.borderColor = 'var(--red-border)';
+      banner.style.color = 'var(--red)';
+      banner.innerHTML = `🚨 <strong>出貨記錄已超過 ${daysDiff} 天未填寫！</strong> 最後一筆：${latestDate || '無記錄'}`;
+    }
+  }).catch(() => {
+    // Silently fail if can't read
   });
 }
 
