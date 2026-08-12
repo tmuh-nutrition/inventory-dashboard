@@ -350,10 +350,15 @@ tbody tr:hover td { background: var(--surface2); }
 
   <!-- 盤點作業 -->
   <div id="tab-stocktake" class="tab-panel">
-    <div class="section-desc">輸入實際盤點數量，系統自動計算與帳面差異。完成後可匯出 CSV 留存。</div>
-    <div style="display:flex;gap:.5rem;margin-bottom:.9rem">
-      <button class="btn" onclick="clearStocktake()">🗑 清除輸入</button>
+    <div class="section-desc">輸入實際盤點數量，系統自動計算與帳面差異。資料會依日期自動儲存在這台裝置上，換分頁、關瀏覽器都不會不見；完成後可匯出 CSV 留存。</div>
+    <div class="section-desc" id="stocktake-baseline-hint" style="color:var(--amber, #b8860b);font-weight:700"></div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.9rem;align-items:center;flex-wrap:wrap">
+      <label style="font-size:.85rem;font-weight:700">盤點日期：</label>
+      <input type="date" id="stocktake-date" onchange="renderStocktake()">
+      <button class="btn" onclick="relockStocktakeBaseline()">🔒 重新鎖定基準</button>
+      <button class="btn" onclick="clearStocktake()">🗑 清除本日輸入</button>
       <button class="btn btn-primary" onclick="exportStocktake()">⬇ 匯出 CSV</button>
+      <span id="stocktake-save-hint" style="font-size:.8rem;color:var(--muted, #888)"></span>
     </div>
     <div class="table-wrap">
       <table>
@@ -702,18 +707,110 @@ function renderTable() {
   }).join('');
 }
 
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/\n/g, ' ');
+}
+
+function stocktakeStorageKey() {
+  const dateInput = document.getElementById('stocktake-date');
+  const d = (dateInput && dateInput.value) || new Date().toISOString().slice(0, 10);
+  return 'nutrition_stocktake_' + d;
+}
+
+function loadStocktakeStorage() {
+  try { return JSON.parse(localStorage.getItem(stocktakeStorageKey()) || '{}'); }
+  catch (e) { return {}; }
+}
+
+function saveStocktakeField(name, field, value) {
+  if (!name) return;
+  const key = stocktakeStorageKey();
+  let data = {};
+  try { data = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) {}
+  if (!data[name]) data[name] = {};
+  data[name][field] = value;
+  localStorage.setItem(key, JSON.stringify(data));
+  const hint = document.getElementById('stocktake-save-hint');
+  if (hint) hint.textContent = '已自動儲存 ' + new Date().toLocaleTimeString('zh-TW');
+}
+
+function stocktakeBaselineKey() {
+  const dateInput = document.getElementById('stocktake-date');
+  const d = (dateInput && dateInput.value) || new Date().toISOString().slice(0, 10);
+  return 'nutrition_stocktake_baseline_' + d;
+}
+
+function getStocktakeBaseline() {
+  try {
+    const raw = localStorage.getItem(stocktakeBaselineKey());
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function lockStocktakeBaseline() {
+  const snapshot = {};
+  Object.values(items).forEach(it => { snapshot[it.name] = Math.round(it.stock); });
+  const payload = { stocks: snapshot, lockedAt: new Date().toLocaleString('zh-TW') };
+  localStorage.setItem(stocktakeBaselineKey(), JSON.stringify(payload));
+}
+
+function relockStocktakeBaseline() {
+  if (!confirm('確定要用「現在最新」的系統庫存，重新鎖定這天的比對基準嗎？\n\n之前已輸入的盤點數量不會被清除，但差異會改用新的基準重新計算。')) return;
+  lockStocktakeBaseline();
+  renderStocktake();
+}
+
+function updateBaselineHint() {
+  const el = document.getElementById('stocktake-baseline-hint');
+  if (!el) return;
+  const b = getStocktakeBaseline();
+  el.textContent = b ? ('🔒 比對基準已鎖定於 ' + b.lockedAt + '，盤點期間就算庫存被更新，比對數字也不會跟著變動') : '';
+}
+
 function renderStocktake() {
   const tbody = document.getElementById('stocktake-tbody');
   const rows = Object.values(items);
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">讀取中…</td></tr>'; return; }
-  tbody.innerHTML = rows.map((it, i) => `<tr>
-    <td style="font-weight:700">${it.name}</td>
-    <td style="font-family:var(--mono)">${Math.round(it.stock)}</td>
-    <td><input type="number" class="st-input" data-idx="${i}" data-sys="${Math.round(it.stock)}" placeholder="輸入" oninput="calcDiff(this)"></td>
+
+  // 預設盤點日期為今天
+  const dateInput = document.getElementById('stocktake-date');
+  if (dateInput && !dateInput.value) {
+    dateInput.value = new Date().toISOString().slice(0, 10);
+  }
+
+  // 這個日期第一次被打開時，自動把當下的系統庫存鎖定成比對基準；
+  // 之後不管背景資料怎麼更新、自動重整幾次，比對用的系統庫存都固定用鎖定當下的數字，
+  // 除非按「重新鎖定基準」才會更新，避免邊盤點邊被別人登錄的新資料干擾
+  let baseline = getStocktakeBaseline();
+  if (!baseline) {
+    lockStocktakeBaseline();
+    baseline = getStocktakeBaseline();
+  }
+  updateBaselineHint();
+
+  // 從這台裝置的儲存空間讀回「這個盤點日期」已經輸入過的數量與備註
+  // 這樣即使5分鐘自動重整、切換頁籤，甚至關掉瀏覽器重開，資料都還在
+  const saved = loadStocktakeStorage();
+
+  tbody.innerHTML = rows.map((it, i) => {
+    const s = saved[it.name] || {};
+    const sysStock = (baseline && baseline.stocks[it.name] != null) ? baseline.stocks[it.name] : Math.round(it.stock);
+    return `<tr>
+    <td style="font-weight:700">${escapeHtml(it.name)}</td>
+    <td style="font-family:var(--mono)">${sysStock}</td>
+    <td><input type="number" class="st-input" data-idx="${i}" data-sys="${sysStock}" data-name="${escapeHtml(it.name)}" placeholder="輸入" value="${escapeHtml(s.actual || '')}" oninput="calcDiff(this); saveStocktakeField(this.dataset.name,'actual',this.value)"></td>
     <td id="diff-${i}" style="font-family:var(--mono);font-weight:700">—</td>
     <td id="diffpct-${i}" style="font-family:var(--mono)">—</td>
-    <td><input type="text" class="st-note" placeholder="備註"></td>
-  </tr>`).join('');
+    <td><input type="text" class="st-note" data-name="${escapeHtml(it.name)}" placeholder="備註" value="${escapeHtml(s.note || '')}" oninput="saveStocktakeField(this.dataset.name,'note',this.value)"></td>
+  </tr>`;
+  }).join('');
+
+  // 還原輸入後，重新計算一次差異顯示
+  document.querySelectorAll('#stocktake-tbody .st-input').forEach(input => {
+    if (input.value !== '') calcDiff(input);
+  });
 }
 
 function calcDiff(input) {
@@ -732,16 +829,22 @@ function calcDiff(input) {
 }
 
 function clearStocktake() {
+  const d = (document.getElementById('stocktake-date') || {}).value || '今天';
+  if (!confirm('確定要清除「' + d + '「。這天已輸入的盤點資料嗎？此動作無法復原。')) return;
+  localStorage.removeItem(stocktakeStorageKey());
   document.querySelectorAll('.st-input').forEach(i => { i.value = ''; });
   document.querySelectorAll('.st-note').forEach(i => { i.value = ''; });
   document.querySelectorAll('[id^="diff-"],[id^="diffpct-"]').forEach(c => {
     c.textContent = '—'; c.style.color = '';
   });
+  const hint = document.getElementById('stocktake-save-hint');
+  if (hint) hint.textContent = '';
 }
 
 function exportStocktake() {
   const rows = document.querySelectorAll('#stocktake-tbody tr');
-  let csv = '\uFEFF品項,系統庫存,實際盤點,差異,差異率,備註\n';
+  const dateVal = (document.getElementById('stocktake-date') || {}).value || new Date().toISOString().slice(0, 10);
+  let csv = '\uFEFF盤點日期,品項,系統庫存,實際盤點,差異,差異率,備註\n';
   rows.forEach(tr => {
     const cells = tr.cells;
     if (!cells.length) return;
@@ -751,13 +854,13 @@ function exportStocktake() {
     const diff = cells[3].textContent.trim();
     const pct = cells[4].textContent.trim();
     const note = cells[5].querySelector('input')?.value || '';
-    csv += `"${name}","${sys}","${actual}","${diff}","${pct}","${note}"\n`;
+    csv += `"${dateVal}","${name}","${sys}","${actual}","${diff}","${pct}","${note}"\n`;
   });
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = '庫存盤點_' + new Date().toLocaleDateString('zh-TW').replace(/\//g, '-') + '.csv';
+  a.download = '庫存盤點_' + dateVal + '.csv';
   a.click();
   URL.revokeObjectURL(url);
 }
