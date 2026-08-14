@@ -28,6 +28,9 @@
   --blue: #1a5fa8;
   --blue-bg: #eef4fc;
   --blue-border: #b8d4f5;
+  --orange: #c9600a;
+  --orange-bg: #fdf1e6;
+  --orange-border: #f0c9a0;
   --font: 'Noto Sans TC', sans-serif;
   --mono: 'DM Mono', monospace;
   --radius: 8px;
@@ -55,6 +58,9 @@
     --blue: #70acf5;
     --blue-bg: #0e1826;
     --blue-border: #1e3858;
+    --orange: #f0a050;
+    --orange-bg: #2a1a08;
+    --orange-border: #5a3818;
   }
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -118,6 +124,7 @@ body {
 .mv-red { color: var(--red); }
 .mv-amber { color: var(--amber); }
 .mv-green { color: var(--green); }
+.mv-orange { color: var(--orange); }
 
 /* Tabs */
 .tabs-row {
@@ -144,6 +151,7 @@ body {
 .alert-red { background: var(--red-bg); border-color: var(--red-border); color: var(--red); }
 .alert-amber { background: var(--amber-bg); border-color: var(--amber-border); color: var(--amber); }
 .alert-green { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
+.alert-orange { background: var(--orange-bg); border-color: var(--orange-border); color: var(--orange); }
 .alert-icon { font-size: 1rem; flex-shrink: 0; }
 .alert-text { flex: 1; color: var(--text); }
 .alert-text strong { color: var(--text); font-weight: 700; }
@@ -186,6 +194,7 @@ tbody tr:hover td { background: var(--surface2); }
 .pill-amber { background: var(--amber-bg); border-color: var(--amber-border); color: var(--amber); }
 .pill-green { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
 .pill-blue { background: var(--blue-bg); border-color: var(--blue-border); color: var(--blue); font-family: var(--mono); }
+.pill-orange { background: var(--orange-bg); border-color: var(--orange-border); color: var(--orange); }
 
 /* Filters */
 .filter-row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: .9rem; }
@@ -304,6 +313,11 @@ tbody tr:hover td { background: var(--surface2); }
       <div class="metric-sub">低於安全庫存量</div>
     </div>
     <div class="metric">
+      <div class="metric-label">🟠 即將偏低</div>
+      <div class="metric-value mv-orange" id="m-watch">—</div>
+      <div class="metric-sub">依目前用量預估即將低於安全庫存</div>
+    </div>
+    <div class="metric">
       <div class="metric-label">🟢 庫存正常</div>
       <div class="metric-value mv-green" id="m-ok">—</div>
       <div class="metric-sub">安全量以上</div>
@@ -349,6 +363,7 @@ tbody tr:hover td { background: var(--surface2); }
         <option value="">全部狀態</option>
         <option value="critical">🔴 緊急補貨</option>
         <option value="low">🟡 低庫存</option>
+        <option value="watch">🟠 即將偏低</option>
         <option value="ok">🟢 正常</option>
       </select>
     </div>
@@ -497,9 +512,9 @@ tbody tr:hover td { background: var(--surface2); }
       <div class="cfg-title">預警參數</div>
       <div class="cfg-grid">
         <div class="cfg-card">
-          <label>低庫存額外警戒天數</label>
-          <input type="number" id="cfg-warn-days" value="4" min="1">
-          <div class="cfg-hint">當狀態欄非「緊急補貨」但庫存仍偏低時的輔助判斷</div>
+          <label>提前預警天數</label>
+          <input type="number" id="cfg-warn-days" value="7" min="1">
+          <div class="cfg-hint">依「週盤點記錄」的日均用量估算，現貨還可撐幾天就會跌破安全庫存；小於此天數會顯示🟠即將偏低（尚未到「低庫存」門檻，提早提醒）</div>
         </div>
       </div>
     </div>
@@ -526,7 +541,7 @@ let cfg = {
   colItem: 2, colUnit: 3, colStock: 4, colSafety: 5,
   colStatus: 6, colSuggested: 7, colLastDate: 10,
   startRow: 3,  // 庫存彙總第1列是說明、第2列是標題、第3列起是資料
-  warnDays: 4,
+  warnDays: 7,
   finSheet: '月結收支報表'
 };
 
@@ -548,9 +563,30 @@ function saveAndReload() {
   cfg.colSuggested = parseInt(document.getElementById('cfg-col-suggested').value) || 8;
   cfg.colLastDate = parseInt(document.getElementById('cfg-col-lastdate').value) || 9;
   cfg.startRow = parseInt(document.getElementById('cfg-start-row').value) || 3;
-  cfg.warnDays = parseInt(document.getElementById('cfg-warn-days').value) || 4;
+  cfg.warnDays = parseInt(document.getElementById('cfg-warn-days').value) || 7;
   cfg.finSheet = document.getElementById('cfg-fin-sheet').value.trim() || '月結收支報表';
   loadData();
+}
+
+async function fetchDailyUsageMap() {
+  // 從「週盤點記錄」抓每個品項的日均用量(K欄)，用來估算現貨還可撐幾天，
+  // 讓「庫存彙總」除了現有的現貨vs安全庫存門檻之外，也能提前示警。
+  try {
+    const sheetEnc = encodeURIComponent('週盤點記錄');
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${sheetEnc}?key=${cfg.apiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) return {};
+    const data = await res.json();
+    const rows = data.values || [];
+    const map = {};
+    rows.slice(5).forEach(r => {
+      const name = (r[1] || '').toString().trim();
+      if (!name) return;
+      const usage = toNum(r[10]);
+      if (usage > 0) map[name] = usage;
+    });
+    return map;
+  } catch (e) { return {}; }
 }
 
 async function loadData() {
@@ -558,13 +594,13 @@ async function loadData() {
   const sheetEnc = encodeURIComponent(cfg.sheetName);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${sheetEnc}?key=${cfg.apiKey}`;
   try {
-    const res = await fetch(url);
+    const [res, usageMap] = await Promise.all([fetch(url), fetchDailyUsageMap()]);
     if (!res.ok) {
       const e = await res.json();
       throw new Error(e.error?.message || '狀態碼 ' + res.status);
     }
     const data = await res.json();
-    processData(data.values || []);
+    processData(data.values || [], usageMap);
     setSyncStatus('ok');
     const now = new Date();
     document.getElementById('m-time').textContent = now.toLocaleTimeString('zh-TW');
@@ -604,7 +640,8 @@ function parseDate(s) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function processData(rows) {
+function processData(rows, usageMap) {
+  usageMap = usageMap || {};
   if (!rows.length) { renderFallback(); return; }
   const startRow = cfg.startRow - 1;
   items = {};
@@ -622,9 +659,17 @@ function processData(rows) {
     let status = 'ok';
     if (statusRaw === '緊急補貨') status = 'critical';
     else if (statusRaw === '低庫存') status = 'low';
-    // Estimate daysLeft from stock/safety ratio for display
-    const daysLeft = safetyStock > 0 ? (stock / safetyStock) * 2 : (stock > 0 ? 999 : 0);
-    items[name] = { name, stock, safetyStock, status, suggested, lastDate, daysLeft, weekOut: 0, unit };
+    // Estimate daysLeft from stock/safety ratio for display (fallback when no real usage rate available)
+    const dailyUsage = usageMap[name] || 0;
+    const daysLeft = dailyUsage > 0 ? (stock / dailyUsage) : (safetyStock > 0 ? (stock / safetyStock) * 2 : (stock > 0 ? 999 : 0));
+    // 現貨還高於安全庫存，但依日均用量估算即將跌破安全庫存 → 提前示警(watch)，
+    // 這是既有的「現貨<=安全庫存才亮燈」門檻抓不到的情況（本次庫存還夠，但快到臨界點）。
+    let daysToSafety = null;
+    if (status === 'ok' && dailyUsage > 0 && stock > safetyStock) {
+      daysToSafety = (stock - safetyStock) / dailyUsage;
+      if (daysToSafety < cfg.warnDays) status = 'watch';
+    }
+    items[name] = { name, stock, safetyStock, status, suggested, lastDate, daysLeft, daysToSafety, dailyUsage, weekOut: 0, unit };
   }
   renderAll();
 }
@@ -641,15 +686,17 @@ function renderAll() {
 }
 
 function renderMetrics() {
-  let crit = 0, low = 0, ok = 0, total = 0;
+  let crit = 0, low = 0, watch = 0, ok = 0, total = 0;
   for (const n in items) {
     const it = items[n]; total++;
     if (it.status === 'critical') crit++;
     else if (it.status === 'low') low++;
+    else if (it.status === 'watch') watch++;
     else ok++;
   }
   document.getElementById('m-critical').textContent = crit;
   document.getElementById('m-low').textContent = low;
+  document.getElementById('m-watch').textContent = watch;
   document.getElementById('m-ok').textContent = ok;
   document.getElementById('m-total').textContent = total;
   // Find latest update date across all items
@@ -670,7 +717,7 @@ function renderAlerts() {
   const list = document.getElementById('alert-list');
   const sorted = Object.values(items)
     .filter(i => i.status !== 'ok')
-    .sort((a, b) => ({ critical: 0, low: 1 }[a.status] - { critical: 0, low: 1 }[b.status]));
+    .sort((a, b) => ({ critical: 0, low: 1, watch: 2 }[a.status] - { critical: 0, low: 1, watch: 2 }[b.status]));
 
   if (!sorted.length) {
     list.innerHTML = '<div class="alert-bar alert-green"><span class="alert-icon">✅</span><span class="alert-text">目前所有品項庫存正常，無需處理。</span></div>';
@@ -678,14 +725,17 @@ function renderAlerts() {
   }
 
   list.innerHTML = sorted.map(it => {
-    const cls = it.status === 'critical' ? 'alert-red' : 'alert-amber';
-    const icon = it.status === 'critical' ? '🚨' : '⚠️';
+    const cls = it.status === 'critical' ? 'alert-red' : it.status === 'low' ? 'alert-amber' : 'alert-orange';
+    const icon = it.status === 'critical' ? '🚨' : it.status === 'low' ? '⚠️' : '🟠';
     const stockStr = Math.round(it.stock);
     const safeStr = Math.round(it.safetyStock);
     const u = it.unit || '件';
+    const daysStr = (it.daysToSafety !== null && it.daysToSafety !== undefined) ? it.daysToSafety.toFixed(1) : '';
     const msg = it.status === 'critical'
       ? `現貨 <strong>${stockStr}</strong> ${u}，已低於或等於零，請立即補貨！`
-      : `現貨 <strong>${stockStr}</strong> ${u}，低於安全庫存（${safeStr} ${u}）`;
+      : it.status === 'low'
+      ? `現貨 <strong>${stockStr}</strong> ${u}，低於安全庫存（${safeStr} ${u}）`
+      : `現貨 <strong>${stockStr}</strong> ${u}，尚在安全庫存（${safeStr} ${u}）之上，但依目前日均用量估計約 <strong>${daysStr}</strong> 天後將跌破安全庫存，建議提前叫貨`;
     const tag = it.suggested > 0 ? `建議叫 ${Math.round(it.suggested)} ${u}` : '';
     return `<div class="${cls} alert-bar">
       <span class="alert-icon">${icon}</span>
@@ -702,7 +752,7 @@ function renderTable() {
     if (q && !it.name.toLowerCase().includes(q)) return false;
     if (fs && it.status !== fs) return false;
     return true;
-  }).sort((a, b) => ({ critical: 0, low: 1, ok: 2 }[a.status] - { critical: 0, low: 1, ok: 2 }[b.status]));
+  }).sort((a, b) => ({ critical: 0, low: 1, watch: 2, ok: 3 }[a.status] - { critical: 0, low: 1, watch: 2, ok: 3 }[b.status]));
 
   const tbody = document.getElementById('inv-tbody');
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">沒有符合條件的品項</td></tr>'; return; }
@@ -710,11 +760,13 @@ function renderTable() {
   const maxStock = Math.max(...rows.map(i => Math.max(i.stock, 0)), 1);
   tbody.innerHTML = rows.map(it => {
     const pct = Math.round(Math.min(100, Math.max(0, it.stock / maxStock * 100)));
-    const barColor = it.status === 'critical' ? 'var(--red)' : it.status === 'low' ? 'var(--amber)' : 'var(--green)';
+    const barColor = it.status === 'critical' ? 'var(--red)' : it.status === 'low' ? 'var(--amber)' : it.status === 'watch' ? 'var(--orange)' : 'var(--green)';
     const pill = it.status === 'critical'
       ? '<span class="pill pill-red">緊急補貨</span>'
       : it.status === 'low'
       ? '<span class="pill pill-amber">低庫存</span>'
+      : it.status === 'watch'
+      ? '<span class="pill pill-orange">即將偏低</span>'
       : '<span class="pill pill-green">正常</span>';
     const uu = it.unit || '件';
     const sugTag = it.suggested > 0
