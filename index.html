@@ -244,6 +244,28 @@ tbody tr:hover td { background: var(--surface2); }
   font-size: .75rem; color: var(--text3); display: flex;
   justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem;
 }
+
+/* Print-only header for 叫貨單 (hidden on screen) */
+.print-only { display: none; }
+
+/* 叫貨建議列印樣式：只印叫貨單本體，隱藏其餘頁面元素，並修正表格因水平捲軸被裁切的問題 */
+@media print {
+  body * { visibility: hidden; }
+  #tab-ordersuggestion, #tab-ordersuggestion * { visibility: visible; }
+  #tab-ordersuggestion {
+    display: block !important;
+    position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0;
+  }
+  .print-only { display: block !important; margin-bottom: 1.25rem; }
+  .print-only .print-title { font-size: 1.3rem; font-weight: 700; margin: 0 0 .2rem; }
+  .print-only .print-date { font-size: .85rem; color: #444; }
+  #order-banner, .btn, .order-print-btn { display: none !important; }
+  .order-flex { display: block !important; }
+  .order-col { width: 100% !important; margin-bottom: 1.5rem; page-break-inside: avoid; }
+  .table-wrap { overflow: visible !important; border: none !important; }
+  table { min-width: 0 !important; width: 100% !important; }
+  thead th, tbody td, tfoot td { padding: .35rem .5rem !important; font-size: .8rem !important; }
+}
 </style>
 </head>
 <body>
@@ -385,18 +407,22 @@ tbody tr:hover td { background: var(--surface2); }
 
   <!-- 叫貨建議 -->
   <div id="tab-ordersuggestion" class="tab-panel">
+    <div class="print-only">
+      <div class="print-title">📦 營養品叫貨單</div>
+      <div class="print-date" id="print-date-text"></div>
+    </div>
     <div id="order-banner" style="padding:.65rem .9rem;border-radius:var(--radius);margin-bottom:1rem;font-size:.85rem;font-weight:700;border:1px solid">讀取中…</div>
-    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem">
-      <div style="flex:1;min-width:280px">
+    <div class="order-flex" style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem">
+      <div class="order-col" style="flex:1;min-width:280px">
         <div class="section-desc" style="margin-bottom:.5rem">📦 本週週一叫貨清單</div>
         <div id="order-main-content"><div class="empty">讀取中…</div></div>
       </div>
-      <div style="flex:1;min-width:280px">
+      <div class="order-col" style="flex:1;min-width:280px">
         <div class="section-desc" id="order-extra-label" style="margin-bottom:.5rem">🟠 加叫清單（月底備貨）</div>
         <div id="order-extra-content"><div class="empty">讀取中…</div></div>
       </div>
     </div>
-    <button class="btn" onclick="window.print()">🖨 列印叫貨單</button>
+    <button class="btn order-print-btn" onclick="window.print()">🖨 列印叫貨單</button>
   </div>
 
   <!-- 收支報表 -->
@@ -1005,6 +1031,12 @@ function renderOrderSuggestion() {
   const extraCont= document.getElementById('order-extra-content');
   const extraLbl = document.getElementById('order-extra-label');
   if (!banner || !mainCont) return;
+
+  const printDateEl = document.getElementById('print-date-text');
+  if (printDateEl) {
+    const now = new Date();
+    printDateEl.textContent = '列印日期：' + now.getFullYear() + '/' + String(now.getMonth()+1).padStart(2,'0') + '/' + String(now.getDate()).padStart(2,'0');
+  }
 
   const sheetEnc = encodeURIComponent('週盤點記錄');
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${sheetEnc}?key=${cfg.apiKey}`;
