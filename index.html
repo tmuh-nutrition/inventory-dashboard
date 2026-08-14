@@ -732,7 +732,9 @@ function renderAlerts() {
     const u = it.unit || '件';
     const daysStr = (it.daysToSafety !== null && it.daysToSafety !== undefined) ? it.daysToSafety.toFixed(1) : '';
     const msg = it.status === 'critical'
-      ? `現貨 <strong>${stockStr}</strong> ${u}，已低於或等於零，請立即補貨！`
+      ? (it.stock <= 0
+          ? `現貨 <strong>${stockStr}</strong> ${u}，已低於或等於零，請立即補貨！`
+          : `現貨 <strong>${stockStr}</strong> ${u}，已低於安全庫存的30%（安全庫存 ${safeStr} ${u}），庫存緊急，請立即補貨！`)
       : it.status === 'low'
       ? `現貨 <strong>${stockStr}</strong> ${u}，低於安全庫存（${safeStr} ${u}）`
       : `現貨 <strong>${stockStr}</strong> ${u}，尚在安全庫存（${safeStr} ${u}）之上，但依目前日均用量估計約 <strong>${daysStr}</strong> 天後將跌破安全庫存，建議提前叫貨`;
