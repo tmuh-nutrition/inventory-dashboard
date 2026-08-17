@@ -1223,8 +1223,19 @@ function checkDailyRecord() {
       }
     });
 
-    // Format latest date for display
-    const daysDiff = latestDate ? Math.floor((today - new Date(latestDate.replace(/\//g,'-'))) / 86400000) : 999;
+    // 純日曆天數差，只比對年/月/日，不牽扯時分秒或時區。
+    // 注意：不要用 new Date() 直接相減——new Date() 是當下含時分秒的本地時間，
+    // 而 new Date("YYYY-MM-DD") 這種純日期字串會被瀏覽器解析成「UTC午夜」，
+    // 兩者相減會被使用者所在時區的偏移量（例如台灣UTC+8）汙染，
+    // 導致跨過當地午夜之後、還要再等超過時區偏移的時數，才會被判定為「差一天」。
+    function daysBetweenCalendarDates(strA, strB) {
+      const parse = (s) => {
+        const parts = s.split(/[\/\-]/).map(n => parseInt(n, 10));
+        return Date.UTC(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
+      };
+      return Math.round((parse(strA) - parse(strB)) / 86400000);
+    }
+    const daysDiff = latestDate ? daysBetweenCalendarDates(todayStr, latestDate) : 999;
 
     // Update or create daily status banner
     let banner = document.getElementById('daily-record-banner');
